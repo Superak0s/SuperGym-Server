@@ -7,8 +7,9 @@ import type { RowDataPacket } from "mysql2"
 import type { InsertResult } from "../../types/index.js"
 import { formatDateForMySQL } from "../utils/dateHelpers.js"
 import { ValidationError } from "../../middleware/errorHandler.js"
+import type { FlowIntensity } from "../../types/index.js"
 
-export type FlowIntensity = "light" | "moderate" | "heavy"
+export type { FlowIntensity }
 
 export interface MenstrualEntry {
   id: number

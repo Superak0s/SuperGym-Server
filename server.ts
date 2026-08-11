@@ -2,6 +2,7 @@
 import express, { Request, Response, NextFunction } from "express"
 import http from "http"
 import cors from "cors"
+import compression from "compression"
 import helmet from "helmet"
 import rateLimit from "express-rate-limit"
 import dotenv from "dotenv"
@@ -22,7 +23,7 @@ if (!process.env.ALLOWED_ORIGINS)
     "ALLOWED_ORIGINS env var is not set — set it to a comma-separated list of allowed origins (e.g. https://yourapp.com)",
   )
 
-import { testDatabaseConnection } from "./config/database.js"
+import { testDatabaseConnection, pool } from "./config/database.js"
 import { createWsServer } from "./ws/wsServer.js"
 import { registerRoutes } from "./routes/index.js"
 import { errorHandler } from "./middleware/errorHandler.js"
@@ -55,6 +56,9 @@ app.use(
     credentials: true,
   }),
 )
+
+// ─── Response compression ──────────────────────────────────────────────────────
+app.use(compression())
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "50kb" }))
@@ -106,6 +110,16 @@ app.use(
   }),
 )
 
+// ─── Unauthenticated liveness check (for Docker/load balancer) ────────────────
+app.get("/healthz", async (_req: Request, res: Response) => {
+  try {
+    await pool.query("SELECT 1")
+    res.json({ status: "OK" })
+  } catch {
+    res.status(503).json({ status: "DOWN" })
+  }
+})
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 registerRoutes(app)
 
@@ -135,14 +149,32 @@ start().catch((err) => {
 })
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
+function shutdown(exitCode: number) {
+  server.close(async () => {
+    try {
+      await pool.end()
+    } catch (err) {
+      console.error("Error closing DB pool:", err)
+    }
+    process.exit(exitCode)
+  })
+}
+
 process.on("SIGTERM", () => {
   console.log("SIGTERM received — shutting down gracefully")
-  server.close(() => {
-    console.log("Server closed")
-    process.exit(0)
-  })
+  shutdown(0)
 })
 
 process.on("SIGINT", () => {
-  server.close(() => process.exit(0))
+  shutdown(0)
+})
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason)
+  shutdown(1)
+})
+
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err)
+  shutdown(1)
 })

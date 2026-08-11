@@ -29,5 +29,5 @@ USER appuser
 
 EXPOSE 5000
 ENV NODE_ENV=production
-HEALTHCHECK --interval=30s --timeout=3s CMD node -e "require('http').get('http://localhost:5000/', r => process.exit(r.statusCode < 500 ? 0 : 1))"
+HEALTHCHECK --interval=30s --timeout=3s CMD node -e "require('http').get('http://localhost:5000/healthz', r => process.exit(r.statusCode === 200 ? 0 : 1))"
 CMD ["node", "dist/server.js"]

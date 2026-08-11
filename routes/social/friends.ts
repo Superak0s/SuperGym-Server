@@ -2,7 +2,6 @@
 import { Router, Request, Response } from "express"
 import { authenticateToken } from "../../middleware/auth.js"
 import {
-  asyncHandler,
   NotFoundError,
   ValidationError,
   ConflictError,
@@ -30,7 +29,7 @@ router.use(authenticateToken)
  */
 router.get(
   "/search",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { q, limit } = req.query
 
     if (!q || (q as string).trim().length < 2) {
@@ -44,7 +43,7 @@ router.get(
     )
 
     res.json({ success: true, users, count: users.length })
-  }),
+  },
 )
 
 /**
@@ -52,10 +51,10 @@ router.get(
  */
 router.get(
   "/",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const friends = await getFriends(req.user!.id)
     res.json({ success: true, friends, count: friends.length })
-  }),
+  },
 )
 
 /**
@@ -63,10 +62,10 @@ router.get(
  */
 router.get(
   "/requests/pending",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const requests = await getPendingRequests(req.user!.id)
     res.json({ success: true, requests, count: requests.length })
-  }),
+  },
 )
 
 /**
@@ -74,10 +73,10 @@ router.get(
  */
 router.get(
   "/requests/sent",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const requests = await getSentRequests(req.user!.id)
     res.json({ success: true, requests, count: requests.length })
-  }),
+  },
 )
 
 /**
@@ -89,7 +88,7 @@ router.get(
  */
 router.post(
   "/suggest-from-contacts",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { emailHashes } = req.body
 
     if (!Array.isArray(emailHashes)) {
@@ -120,7 +119,7 @@ router.post(
     )
 
     res.json({ success: true, suggestions, count: suggestions.length })
-  }),
+  },
 )
 
 /**
@@ -128,7 +127,7 @@ router.post(
  */
 router.post(
   "/request",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { username } = req.body
 
     if (!username) {
@@ -183,7 +182,7 @@ router.post(
         name: targetUser.name,
       },
     })
-  }),
+  },
 )
 
 /**
@@ -191,7 +190,7 @@ router.post(
  */
 router.post(
   "/request/:friendshipId/accept",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const friendshipId = parseInt(String(req.params.friendshipId), 10)
     if (isNaN(friendshipId)) throw new ValidationError("Invalid friendship ID")
 
@@ -203,7 +202,7 @@ router.post(
       throw err
     }
     res.json({ success: true, message: "Friend request accepted" })
-  }),
+  },
 )
 
 /**
@@ -211,7 +210,7 @@ router.post(
  */
 router.post(
   "/request/:friendshipId/reject",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const friendshipId = parseInt(String(req.params.friendshipId), 10)
     if (isNaN(friendshipId)) throw new ValidationError("Invalid friendship ID")
 
@@ -223,7 +222,7 @@ router.post(
       throw err
     }
     res.json({ success: true, message: "Friend request rejected" })
-  }),
+  },
 )
 
 /**
@@ -231,7 +230,7 @@ router.post(
  */
 router.delete(
   "/:friendId",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const friendId = parseInt(String(req.params.friendId), 10)
     if (isNaN(friendId)) throw new ValidationError("Invalid friend ID")
 
@@ -243,7 +242,7 @@ router.delete(
       throw err
     }
     res.json({ success: true, message: "Friend removed" })
-  }),
+  },
 )
 
 export default router

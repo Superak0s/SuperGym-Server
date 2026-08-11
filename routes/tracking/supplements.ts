@@ -2,7 +2,6 @@
 import { Router, Request, Response } from "express"
 import { authenticateToken } from "../../middleware/auth.js"
 import {
-  asyncHandler,
   ValidationError,
   NotFoundError,
 } from "../../middleware/errorHandler.js"
@@ -21,8 +20,6 @@ import {
   saveLocation,
   getLocation,
   toggleLocation,
-  checkIfAtLocation,
-  deleteLocation,
 } from "../../models/tracking/supplements.js"
 
 const router: Router = Router()
@@ -65,10 +62,10 @@ async function requireSupplement(userId: number, supplementId: number) {
  */
 router.get(
   "/",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const summaries = await listSupplementSummaries(req.user!.id)
     res.json({ success: true, supplements: summaries })
-  }),
+  },
 )
 
 /**
@@ -77,7 +74,7 @@ router.get(
  */
 router.post(
   "/",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const {
       name,
       unit = "g",
@@ -124,29 +121,7 @@ router.post(
     )
 
     res.status(201).json({ success: true, supplement })
-  }),
-)
-
-/**
- * GET /api/tracking/supplements/:id
- */
-router.get(
-  "/:id",
-  asyncHandler(async (req: Request, res: Response) => {
-    const supplementId = parseSupplementId(String(req.params.id))
-    const supplement = await requireSupplement(req.user!.id, supplementId)
-    const [takenToday, streak] = await Promise.all([
-      hasTakenTodayServer(req.user!.id, supplementId),
-      getStreak(req.user!.id, supplementId),
-    ])
-    res.json({
-      success: true,
-      supplement,
-      takenToday: !!takenToday,
-      todayEntry: takenToday,
-      streak,
-    })
-  }),
+  },
 )
 
 /**
@@ -155,7 +130,7 @@ router.get(
  */
 router.patch(
   "/:id",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     await requireSupplement(req.user!.id, supplementId)
 
@@ -209,7 +184,7 @@ router.patch(
     })
 
     res.json({ success: true, supplement: updated })
-  }),
+  },
 )
 
 /**
@@ -217,12 +192,12 @@ router.patch(
  */
 router.delete(
   "/:id",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     const deleted = await deleteSupplement(req.user!.id, supplementId)
     if (!deleted) throw new NotFoundError("Supplement")
     res.json({ success: true })
-  }),
+  },
 )
 
 // ─── Log ──────────────────────────────────────────────────────────────────────
@@ -232,7 +207,7 @@ router.delete(
  */
 router.post(
   "/:id/log",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     const supplement = await requireSupplement(req.user!.id, supplementId)
     const { amount, takenAt, note } = req.body
@@ -254,7 +229,7 @@ router.post(
     const streak = await getStreak(req.user!.id, supplementId)
 
     res.status(201).json({ success: true, id: entryId, streak })
-  }),
+  },
 )
 
 /**
@@ -262,7 +237,7 @@ router.post(
  */
 router.get(
   "/:id/log",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     await requireSupplement(req.user!.id, supplementId)
 
@@ -280,7 +255,7 @@ router.get(
       takenToday: !!todayEntry,
       todayEntry,
     })
-  }),
+  },
 )
 
 /**
@@ -288,7 +263,7 @@ router.get(
  */
 router.delete(
   "/:id/log/:entryId",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     await requireSupplement(req.user!.id, supplementId)
 
@@ -298,20 +273,7 @@ router.delete(
     const deleted = await deleteLogEntry(req.user!.id, entryId)
     if (!deleted) throw new NotFoundError("Log entry")
     res.json({ success: true })
-  }),
-)
-
-/**
- * GET /api/tracking/supplements/:id/streak
- */
-router.get(
-  "/:id/streak",
-  asyncHandler(async (req: Request, res: Response) => {
-    const supplementId = parseSupplementId(String(req.params.id))
-    await requireSupplement(req.user!.id, supplementId)
-    const streak = await getStreak(req.user!.id, supplementId)
-    res.json({ success: true, streak })
-  }),
+  },
 )
 
 // ─── Location ─────────────────────────────────────────────────────────────────
@@ -321,7 +283,7 @@ router.get(
  */
 router.put(
   "/:id/location",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     await requireSupplement(req.user!.id, supplementId)
 
@@ -352,7 +314,7 @@ router.put(
       radius,
     )
     res.json({ success: true, location })
-  }),
+  },
 )
 
 /**
@@ -360,12 +322,12 @@ router.put(
  */
 router.get(
   "/:id/location",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     await requireSupplement(req.user!.id, supplementId)
     const location = await getLocation(req.user!.id, supplementId)
     res.json({ success: true, location, enabled: location?.enabled ?? false })
-  }),
+  },
 )
 
 /**
@@ -373,7 +335,7 @@ router.get(
  */
 router.put(
   "/:id/location/toggle",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const supplementId = parseSupplementId(String(req.params.id))
     await requireSupplement(req.user!.id, supplementId)
 
@@ -391,57 +353,7 @@ router.put(
       }
       throw err
     }
-  }),
-)
-
-/**
- * POST /api/tracking/supplements/:id/location/check
- */
-router.post(
-  "/:id/location/check",
-  asyncHandler(async (req: Request, res: Response) => {
-    const supplementId = parseSupplementId(String(req.params.id))
-    await requireSupplement(req.user!.id, supplementId)
-
-    const { latitude, longitude } = req.body
-    if (latitude == null || longitude == null) {
-      throw new ValidationError("latitude and longitude are required")
-    }
-    if (
-      latitude < -90 ||
-      latitude > 90 ||
-      longitude < -180 ||
-      longitude > 180
-    ) {
-      throw new ValidationError("Invalid coordinates")
-    }
-
-    const result = await checkIfAtLocation(
-      req.user!.id,
-      supplementId,
-      latitude,
-      longitude,
-    )
-    res.json({ success: true, ...result })
-  }),
-)
-
-/**
- * DELETE /api/tracking/supplements/:id/location
- */
-router.delete(
-  "/:id/location",
-  asyncHandler(async (req: Request, res: Response) => {
-    const supplementId = parseSupplementId(String(req.params.id))
-    await requireSupplement(req.user!.id, supplementId)
-
-    const deleted = await deleteLocation(req.user!.id, supplementId)
-    if (!deleted) throw new NotFoundError("Reminder location")
-    res.json({
-      success: true,
-      message: "Reminder location deleted successfully",
-    })
-  }),
+  },
 )
 
 export default router

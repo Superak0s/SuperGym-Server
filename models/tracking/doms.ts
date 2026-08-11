@@ -4,6 +4,7 @@
 import { pool } from "../../config/database.js";
 import { query as dbQuery } from "../../config/database.js";
 import type { RowDataPacket } from "mysql2";
+import type { PoolConnection } from "mysql2/promise";
 import type { InsertResult } from "../../types/index.js";
 import { formatDateForMySQL } from "../utils/dateHelpers.js";
 import { ValidationError, NotFoundError } from "../../middleware/errorHandler.js";
@@ -187,32 +188,44 @@ export async function updateSorenessWithFollowUp(
         ? "recovering"
         : "active";
 
-  // Update the active soreness record
-  await pool.execute<
-    InsertResult & { constructor: { name: string } }
-  >(
-    `UPDATE active_soreness
-     SET intensity = ?, status = ?, updated_at = ?, recovered_at = COALESCE(recovered_at, ?), notes = COALESCE(?, notes)
-     WHERE id = ? AND user_id = ?`,
-    [
-      intensity,
-      newSorenessStatus,
-      now,
-      status === "recovered" ? now : null,
-      notes ?? null,
-      sorenessId,
-      userId,
-    ],
-  );
+  const connection: PoolConnection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
 
-  // Insert follow-up record
-  await pool.execute<
-    InsertResult & { constructor: { name: string } }
-  >(
-    `INSERT INTO soreness_follow_up (soreness_id, intensity, status, notes, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [sorenessId, intensity, status, notes ?? null, now],
-  );
+    // Update the active soreness record
+    await connection.execute<
+      InsertResult & { constructor: { name: string } }
+    >(
+      `UPDATE active_soreness
+       SET intensity = ?, status = ?, updated_at = ?, recovered_at = COALESCE(recovered_at, ?), notes = COALESCE(?, notes)
+       WHERE id = ? AND user_id = ?`,
+      [
+        intensity,
+        newSorenessStatus,
+        now,
+        status === "recovered" ? now : null,
+        notes ?? null,
+        sorenessId,
+        userId,
+      ],
+    );
+
+    // Insert follow-up record
+    await connection.execute<
+      InsertResult & { constructor: { name: string } }
+    >(
+      `INSERT INTO soreness_follow_up (soreness_id, intensity, status, notes, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [sorenessId, intensity, status, notes ?? null, now],
+    );
+
+    await connection.commit();
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
 
   return getSorenessById(userId, sorenessId);
 }

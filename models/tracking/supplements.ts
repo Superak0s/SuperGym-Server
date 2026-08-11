@@ -2,12 +2,17 @@
 import { pool } from "../../config/database.js"
 import { query as dbQuery } from "../../config/database.js"
 import type { RowDataPacket } from "mysql2"
+import type { PoolConnection } from "mysql2/promise"
 import type { InsertResult } from "../../types/index.js"
-import {
-  formatDateForMySQL,
-  simpleTimeToMySQL,
-  mysqlTimeToSimple,
-} from "../utils/dateHelpers.js"
+import { formatDateForMySQL } from "../utils/dateHelpers.js"
+
+const mysqlTimeToSimple = (t: string): string =>
+  t.toString().split(":").slice(0, 2).join(":")
+
+const simpleTimeToMySQL = (t: string): string => {
+  const [h = "00", m = "00"] = t.split(":")
+  return `${h.padStart(2, "0")}:${m.padStart(2, "0")}:00`
+}
 import type {
   Supplement,
   SupplementSummary,
@@ -425,17 +430,29 @@ export async function toggleLocation(
   const existing = await getLocation(userId, supplementId)
   if (!existing) throw new Error("No reminder location set")
 
-  await pool.execute(
-    `UPDATE supplement_locations SET enabled = ?, updated_at = NOW()
-     WHERE supplement_id = ? AND user_id = ?`,
-    [enabled ? 1 : 0, supplementId, userId],
-  )
+  const connection: PoolConnection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
 
-  // Also sync the flag on the parent supplement row
-  await pool.execute(
-    `UPDATE supplements SET location_reminder_enabled = ? WHERE id = ? AND user_id = ?`,
-    [enabled ? 1 : 0, supplementId, userId],
-  )
+    await connection.execute(
+      `UPDATE supplement_locations SET enabled = ?, updated_at = NOW()
+       WHERE supplement_id = ? AND user_id = ?`,
+      [enabled ? 1 : 0, supplementId, userId],
+    )
+
+    // Also sync the flag on the parent supplement row
+    await connection.execute(
+      `UPDATE supplements SET location_reminder_enabled = ? WHERE id = ? AND user_id = ?`,
+      [enabled ? 1 : 0, supplementId, userId],
+    )
+
+    await connection.commit()
+  } catch (err) {
+    await connection.rollback()
+    throw err
+  } finally {
+    connection.release()
+  }
 
   return { ...existing, enabled }
 }
@@ -470,16 +487,29 @@ export async function deleteLocation(
   userId: number,
   supplementId: number,
 ): Promise<boolean> {
-  const [result] = await pool.execute<InsertResult>(
-    `DELETE FROM supplement_locations WHERE supplement_id = ? AND user_id = ?`,
-    [supplementId, userId],
-  )
-  if (result.affectedRows > 0) {
-    await pool.execute(
-      `UPDATE supplements SET location_reminder_enabled = 0 WHERE id = ? AND user_id = ?`,
+  const connection: PoolConnection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    const [result] = await connection.execute<InsertResult>(
+      `DELETE FROM supplement_locations WHERE supplement_id = ? AND user_id = ?`,
       [supplementId, userId],
     )
-    return true
+    let deleted = false
+    if (result.affectedRows > 0) {
+      await connection.execute(
+        `UPDATE supplements SET location_reminder_enabled = 0 WHERE id = ? AND user_id = ?`,
+        [supplementId, userId],
+      )
+      deleted = true
+    }
+
+    await connection.commit()
+    return deleted
+  } catch (err) {
+    await connection.rollback()
+    throw err
+  } finally {
+    connection.release()
   }
-  return false
 }

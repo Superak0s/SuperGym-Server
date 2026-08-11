@@ -26,6 +26,9 @@ Thumbs.db
 dist/
 build/
 
+# SonarQube scanner cache
+.scannerwork/
+
 # =================
 # Node / JavaScript
 # =================

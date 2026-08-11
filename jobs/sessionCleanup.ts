@@ -108,11 +108,3 @@ export function startStaleSessionCleanup(): void {
       `(inactivity threshold: ${INACTIVITY_THRESHOLD_MINUTES}m)`,
   )
 }
-
-/** Mainly useful for graceful shutdown / tests. */
-export function stopStaleSessionCleanup(): void {
-  if (cleanupTimer) {
-    clearInterval(cleanupTimer)
-    cleanupTimer = null
-  }
-}

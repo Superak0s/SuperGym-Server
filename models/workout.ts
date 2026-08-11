@@ -1,6 +1,7 @@
 // src/models/workout.ts
 import { pool } from "../config/database.js"
 import { query as dbQuery } from "../config/database.js"
+import type { PoolConnection } from "mysql2/promise"
 import type { RowDataPacket } from "mysql2"
 import { formatDateForMySQL } from "./utils/dateHelpers.js"
 import { NotFoundError, ForbiddenError } from "../middleware/errorHandler.js"
@@ -180,34 +181,47 @@ export async function recordSetTiming(
         )
       : null
 
-  const [result] = await pool.execute<
-    InsertResult & { constructor: { name: string } }
-  >(
-    `INSERT INTO set_timings (session_id, exercise_id, set_index, start_time, end_time, set_duration, rest_time, weight, reps, note, is_warmup)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      sessionId,
+  const connection: PoolConnection = await pool.getConnection()
+  try {
+    await connection.beginTransaction()
+
+    const [result] = await connection.execute<
+      InsertResult & { constructor: { name: string } }
+    >(
+      `INSERT INTO set_timings (session_id, exercise_id, set_index, start_time, end_time, set_duration, rest_time, weight, reps, note, is_warmup)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        sessionId,
+        exerciseId,
+        setIndex,
+        formatDateForMySQL(startTime),
+        formatDateForMySQL(endTime),
+        setDuration,
+        restTime,
+        weight,
+        reps,
+        note,
+        isWarmup ? 1 : 0,
+      ],
+    )
+    await connection.execute(
+      `UPDATE sessions SET completed_sets = completed_sets + 1 WHERE id = ?`,
+      [sessionId],
+    )
+
+    await connection.commit()
+
+    return {
+      id: (result as unknown as InsertResult).insertId,
       exerciseId,
-      setIndex,
-      formatDateForMySQL(startTime),
-      formatDateForMySQL(endTime),
       setDuration,
       restTime,
-      weight,
-      reps,
-      note,
-      isWarmup ? 1 : 0,
-    ],
-  )
-  await pool.execute(
-    `UPDATE sessions SET completed_sets = completed_sets + 1 WHERE id = ?`,
-    [sessionId],
-  )
-  return {
-    id: (result as unknown as InsertResult).insertId,
-    exerciseId,
-    setDuration,
-    restTime,
+    }
+  } catch (err) {
+    await connection.rollback()
+    throw err
+  } finally {
+    connection.release()
   }
 }
 
@@ -482,13 +496,6 @@ export async function deleteAllSessionsForPerson(
   } finally {
     conn.release()
   }
-}
-
-export async function deleteAllSessions(userId: number): Promise<number> {
-  const [result] = await pool.execute<
-    InsertResult & { constructor: { name: string } }
-  >(`DELETE FROM sessions WHERE user_id = ? AND is_admin = 0`, [userId])
-  return (result as unknown as InsertResult).affectedRows
 }
 
 export async function updateSessionPerson(

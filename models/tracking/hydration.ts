@@ -16,15 +16,6 @@ export interface HydrationEntry {
   createdAt: Date
 }
 
-export interface HydrationStats {
-  totalToday: number
-  totalThisWeek: number
-  totalThisMonth: number
-  averageDaily: number
-  entryCount: number
-  lastEntry: HydrationEntry | null
-}
-
 // ─── DB row shapes ────────────────────────────────────────────────────────────
 
 interface HydrationRow extends RowDataPacket {
@@ -33,11 +24,6 @@ interface HydrationRow extends RowDataPacket {
   logged_at: Date
   note: string | null
   created_at: Date
-}
-
-interface TotalRow extends RowDataPacket {
-  total: number | null
-  count: number
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -90,52 +76,6 @@ export async function getDailyHydration(
   return rows.map(formatEntry)
 }
 
-export async function getHydrationStats(userId: number): Promise<HydrationStats> {
-  // Today's total
-  const [todayRows] = await dbQuery<TotalRow[]>(
-    `SELECT SUM(amount_ml) AS total, COUNT(*) AS count
-     FROM hydration_log WHERE user_id = ? AND DATE(logged_at) = CURDATE()`,
-    [userId],
-  )
-  const today = todayRows[0]
-
-  // This week
-  const [weekRows] = await dbQuery<TotalRow[]>(
-    `SELECT SUM(amount_ml) AS total FROM hydration_log
-     WHERE user_id = ? AND logged_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)`,
-    [userId],
-  )
-
-  // This month
-  const [monthRows] = await dbQuery<TotalRow[]>(
-    `SELECT SUM(amount_ml) AS total FROM hydration_log
-     WHERE user_id = ? AND MONTH(logged_at) = MONTH(NOW()) AND YEAR(logged_at) = YEAR(NOW())`,
-    [userId],
-  )
-
-  // Average daily (last 30 days)
-  const [avgRows] = await dbQuery<TotalRow[]>(
-    `SELECT SUM(amount_ml) AS total, COUNT(DISTINCT DATE(logged_at)) AS count
-     FROM hydration_log WHERE user_id = ? AND logged_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`,
-    [userId],
-  )
-  const avgDaily =
-    avgRows[0].count > 0
-      ? (avgRows[0].total || 0) / avgRows[0].count
-      : 0
-
-  const lastEntry = await getLastHydrationEntry(userId)
-
-  return {
-    totalToday: today.total || 0,
-    totalThisWeek: weekRows[0].total || 0,
-    totalThisMonth: monthRows[0].total || 0,
-    averageDaily: parseFloat(avgDaily.toFixed(0)),
-    entryCount: today.count,
-    lastEntry,
-  }
-}
-
 export async function deleteHydrationEntry(
   userId: number,
   entryId: number,
@@ -186,17 +126,6 @@ export async function setHydrationSettings(userId: number, settings: Partial<{ g
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function getLastHydrationEntry(
-  userId: number,
-): Promise<HydrationEntry | null> {
-  const [rows] = await dbQuery<HydrationRow[]>(
-    `SELECT id, amount_ml, logged_at, note, created_at
-     FROM hydration_log WHERE user_id = ? ORDER BY logged_at DESC LIMIT 1`,
-    [userId],
-  )
-  return rows[0] ? formatEntry(rows[0]) : null
-}
 
 function formatEntry(row: HydrationRow): HydrationEntry {
   return {

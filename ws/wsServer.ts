@@ -86,7 +86,6 @@ const MAX_PREAUTH_MSGS = 10 // messages allowed before authenticating
 
 // Heartbeat interval — ping every connected client every 30 s.
 const PING_INTERVAL_MS = 30_000
-const PONG_TIMEOUT_MS = 10_000 // eslint-disable-line @typescript-eslint/no-unused-vars
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -97,6 +96,14 @@ function send(ws: WebSocket | undefined, type: string, payload: object): void {
 
 function sendToUser(userId: number, type: string, payload: object): void {
   send(clients.get(userId), type, payload)
+}
+
+async function loadWsUser(userId: number): Promise<WsUser | null> {
+  const [users] = await pool.execute<any[]>(
+    "SELECT id, username FROM users WHERE id = ?",
+    [userId],
+  )
+  return (users[0] as WsUser) ?? null
 }
 
 async function authenticateWs(req: http.IncomingMessage): Promise<WsUser> {
@@ -110,12 +117,9 @@ async function authenticateWs(req: http.IncomingMessage): Promise<WsUser> {
   const userId = consumeWsTicket(ticket)
   if (userId === null) throw new Error("Invalid or expired ticket")
 
-  const [users] = await pool.execute<any[]>(
-    "SELECT id, username FROM users WHERE id = ?",
-    [userId],
-  )
-  if (!users[0]) throw new Error("User not found")
-  return users[0] as WsUser
+  const user = await loadWsUser(userId)
+  if (!user) throw new Error("User not found")
+  return user
 }
 
 // ─── Message handlers ─────────────────────────────────────────────────────────
@@ -141,12 +145,7 @@ async function handlePushJointProgress(
     exerciseNames: progress?.exerciseNames ?? null,
   })
 
-  const partner = session.participants.find((p) => p.userId !== user.id)
-  if (partner)
-    sendToUser(partner.userId, "joint_progress", {
-      jointSessionId,
-      progress: { ...progress, fromUserId: user.id },
-    })
+  notifyJointProgress(session, user.id, progress ?? {})
 }
 
 async function handleLeaveJointSession(
@@ -185,11 +184,7 @@ export const notifyWatcher = (watcherUserId: number, sessionSnapshot: object) =>
   sendToUser(watcherUserId, "live_session_update", {
     liveSession: sessionSnapshot,
   })
-export const pushSessionStatus = (
-  toUserId: number,
-  type: string,
-  payload: object,
-) => sendToUser(toUserId, type, payload)
+export { sendToUser }
 
 export function notifyJointProgress(
   session: JointSession,
@@ -333,18 +328,15 @@ export function createWsServer(httpServer: http.Server): WebSocketServer {
             },
           ) as JwtPayload
 
-          const [users] = await pool.execute<any[]>(
-            "SELECT id, username FROM users WHERE id = ?",
-            [payload.userId],
-          )
+          const authedUser = await loadWsUser(payload.userId)
 
-          if (!users[0]) {
+          if (!authedUser) {
             console.warn("[WS] user not found for userId:", payload.userId)
             ws.close(4001, "Unauthorized: User not found")
             return
           }
 
-          user = users[0] as WsUser
+          user = authedUser
           extWs._authenticated = true
           extWs._userId = user.id
 

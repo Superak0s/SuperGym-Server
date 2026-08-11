@@ -2,19 +2,14 @@
 import { Router, Request, Response } from "express"
 import { authenticateToken } from "../../middleware/auth.js"
 import {
-  asyncHandler,
   ValidationError,
   NotFoundError,
 } from "../../middleware/errorHandler.js"
 import {
   logMacrosIntake,
   getMacrosHistory,
-  getMacrosStatsForDate,
   setMacrosGoals,
-  getMacrosGoals,
   deleteMacrosEntry,
-  getWeeklySummary,
-  getMonthlySummary,
 } from "../../models/tracking/macros.js"
 
 const router: Router = Router()
@@ -36,7 +31,7 @@ function safeMacro(v: unknown, name: string): number | null {
  */
 router.post(
   "/log",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const {
       name,
       protein,
@@ -100,7 +95,7 @@ router.post(
         note: entry.note,
       },
     })
-  }),
+  },
 )
 
 /**
@@ -108,22 +103,11 @@ router.post(
  */
 router.get(
   "/log",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const days = Math.min(parseInt(req.query.days as string) || 30, 365)
     const entries = await getMacrosHistory(req.user!.id, days)
     res.json({ success: true, entries })
-  }),
-)
-
-/**
- * GET /api/tracking/macros/stats/:date
- */
-router.get(
-  "/stats/:date",
-  asyncHandler(async (req: Request, res: Response) => {
-    const stats = await getMacrosStatsForDate(req.user!.id, String(req.params.date))
-    res.json({ success: true, stats })
-  }),
+  },
 )
 
 /**
@@ -131,7 +115,7 @@ router.get(
  */
 router.put(
   "/goals",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { protein, carbs, fat, calories } = req.body
 
     if (protein == null && carbs == null && fat == null && calories == null) {
@@ -151,18 +135,7 @@ router.put(
     })
 
     res.json({ success: true, goals: { protein, carbs, fat, calories } })
-  }),
-)
-
-/**
- * GET /api/tracking/macros/goals
- */
-router.get(
-  "/goals",
-  asyncHandler(async (req: Request, res: Response) => {
-    const goals = await getMacrosGoals(req.user!.id)
-    res.json({ success: true, goals })
-  }),
+  },
 )
 
 /**
@@ -170,40 +143,14 @@ router.get(
  */
 router.delete(
   "/log/:id",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const deleted = await deleteMacrosEntry(
       req.user!.id,
       parseInt(String(req.params.id)),
     )
     if (!deleted) throw new NotFoundError("Macro entry")
     res.json({ success: true, message: "Entry deleted successfully" })
-  }),
-)
-
-/**
- * GET /api/tracking/macros/summary/week
- */
-router.get(
-  "/summary/week",
-  asyncHandler(async (req: Request, res: Response) => {
-    const summary = await getWeeklySummary(req.user!.id)
-    res.json({ success: true, summary })
-  }),
-)
-
-/**
- * GET /api/tracking/macros/summary/month
- */
-router.get(
-  "/summary/month",
-  asyncHandler(async (req: Request, res: Response) => {
-    const result = await getMonthlySummary(req.user!.id)
-    res.json({
-      success: true,
-      summary: result.summary,
-      averageDaily: result.averageDaily,
-    })
-  }),
+  },
 )
 
 export default router

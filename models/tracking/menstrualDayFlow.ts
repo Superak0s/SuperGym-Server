@@ -1,10 +1,10 @@
 import { pool, query as dbQuery } from "../../config/database.js"
 import type { RowDataPacket } from "mysql2"
 import { formatDateForMySQL } from "../utils/dateHelpers.js"
-import type { InsertResult } from "../../types/index.js"
+import type { InsertResult, FlowIntensity } from "../../types/index.js"
 import { ValidationError } from "../../middleware/errorHandler.js"
 
-export type FlowIntensity = "light" | "moderate" | "heavy"
+export type { FlowIntensity }
 
 interface DayFlowRow extends RowDataPacket {
   id: number
@@ -78,25 +78,3 @@ export async function deleteDayFlowForDate(
   return (result as unknown as InsertResult).affectedRows > 0
 }
 
-export async function getDayFlowsForRange(
-  userId: number,
-  startIso: string,
-  endIso: string,
-): Promise<DayFlowEntry[]> {
-  const start = new Date(startIso)
-  const end = new Date(endIso)
-  if (isNaN(start.getTime()) || isNaN(end.getTime()))
-    throw new ValidationError("Invalid range dates")
-  const [rows] = await dbQuery<DayFlowRow[]>(
-    `SELECT id, date, intensity, note, created_at, updated_at FROM menstrual_day_flow WHERE user_id = ? AND date BETWEEN ? AND ?`,
-    [userId, formatDateForMySQL(startIso).slice(0, 10), formatDateForMySQL(endIso).slice(0, 10)],
-  )
-  return rows.map((r) => ({
-    id: r.id,
-    date: (r.date as Date).toISOString().slice(0, 10),
-    intensity: r.intensity,
-    note: r.note,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }))
-}

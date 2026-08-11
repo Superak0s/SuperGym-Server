@@ -2,7 +2,6 @@
 import { Router, Request, Response } from "express"
 import { pool } from "../config/database.js"
 import { authenticateToken } from "../middleware/auth.js"
-import { asyncHandler } from "../middleware/errorHandler.js"
 import { getAnalytics } from "../models/analytics.js"
 
 const router: Router = Router()
@@ -16,7 +15,7 @@ const router: Router = Router()
 router.get(
   "/",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const [[sessionCount], [adminCount], [userCount]] = await Promise.all([
       pool.execute<any[]>(
         "SELECT COUNT(*) as count FROM sessions WHERE is_admin = 0",
@@ -46,7 +45,7 @@ router.get(
         totalSetsCompleted: userAnalytics.total_sets || 0,
       },
     })
-  }),
+  },
 )
 
 export default router

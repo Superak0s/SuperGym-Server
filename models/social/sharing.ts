@@ -177,17 +177,6 @@ export async function revokePermission(
     throw new NotFoundError("Permission")
 }
 
-export async function revokePermissionByType(
-  fromUserId: number,
-  toUserId: number,
-  permissionType: PermissionType,
-): Promise<void> {
-  await pool.execute(
-    `DELETE FROM sharing_permissions WHERE from_user_id = ? AND to_user_id = ? AND permission_type = ?`,
-    [fromUserId, toUserId, permissionType],
-  )
-}
-
 export async function getGrantedPermissions(
   userId: number,
 ): Promise<Permission[]> {
@@ -232,27 +221,6 @@ export async function hasPermission(
     [fromUserId, toUserId, permissionType],
   )
   return rows.length > 0
-}
-
-export async function getPermission(
-  fromUserId: number,
-  toUserId: number,
-  permissionType: PermissionType,
-): Promise<Omit<Permission, "from_user_id" | "to_user_id"> | null> {
-  const [rows] = await dbQuery<PermissionRow[]>(
-    `SELECT id, payload, created_at, updated_at FROM sharing_permissions WHERE from_user_id = ? AND to_user_id = ? AND permission_type = ? LIMIT 1`,
-    [fromUserId, toUserId, permissionType],
-  )
-  if (!rows[0]) return null
-  return {
-    ...rows[0],
-    payload: rows[0].payload
-      ? (JSON.parse(rows[0].payload as unknown as string) as Record<
-          string,
-          unknown
-        >)
-      : null,
-  }
 }
 
 export async function getSharingStats(
@@ -539,22 +507,8 @@ export async function endJointSession(
 // ─── Active session status ────────────────────────────────────────────────────
 
 /**
- * Expires stale open sessions for a user (older than 4 hours with no end_time).
- * Call this explicitly at session-start time or on a schedule — NOT as a
- * side-effect inside getUserActiveSessionStatus.
- */
-export async function expireStaleActiveSessions(userId: number): Promise<void> {
-  await pool.execute(
-    `UPDATE sessions SET end_time = DATE_ADD(start_time, INTERVAL 4 HOUR), total_duration = 14400
-     WHERE user_id = ? AND end_time IS NULL AND is_admin = 0 AND start_time < DATE_SUB(NOW(), INTERVAL 4 HOUR)`,
-    [userId],
-  )
-}
-
-/**
  * Returns whether the user has an active (non-ended) session.
  * Pure read — does not mutate any rows.
- * Call expireStaleActiveSessions() first if you want stale sessions cleaned up.
  */
 export async function getUserActiveSessionStatus(
   userId: number,

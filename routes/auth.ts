@@ -2,7 +2,6 @@
 import { Router, Request, Response } from "express"
 import { authenticateToken } from "../middleware/auth.js"
 import {
-  asyncHandler,
   ConflictError,
   UnauthorizedError,
   ValidationError,
@@ -20,10 +19,8 @@ import {
   generateToken,
   usernameExists,
   emailExists,
-  changePassword,
 } from "../models/auth.js"
 import { updateUserProfile, deleteAllUserData } from "../models/user.js"
-import { issueWsTicket } from "../ws/wsServer.js"
 
 const router: Router = Router()
 
@@ -33,7 +30,7 @@ const router: Router = Router()
 router.post(
   "/signup",
   validateRegistration,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { username, email, password, name } = req.body
 
     if (await usernameExists(username)) {
@@ -62,7 +59,7 @@ router.post(
         created_at: user.created_at,
       },
     })
-  }),
+  },
 )
 
 /**
@@ -71,7 +68,7 @@ router.post(
 router.post(
   "/signin",
   validateLogin,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { username, password } = req.body
 
     const user = await findUserByCredentials(username)
@@ -95,7 +92,7 @@ router.post(
         created_at: user.created_at,
       },
     })
-  }),
+  },
 )
 
 /**
@@ -104,9 +101,9 @@ router.post(
 router.get(
   "/me",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     res.json({ success: true, user: req.user })
-  }),
+  },
 )
 
 /**
@@ -115,7 +112,7 @@ router.get(
 router.put(
   "/profile",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { name, email } = req.body
     const updates: Record<string, string> = {}
 
@@ -144,33 +141,7 @@ router.put(
     const user = await findUserById(req.user!.id)
 
     res.json({ success: true, message: "Profile updated successfully", user })
-  }),
-)
-
-/**
- * PUT /api/auth/password
- */
-router.put(
-  "/password",
-  authenticateToken,
-  validateRequired(["currentPassword", "newPassword"]),
-  asyncHandler(async (req: Request, res: Response) => {
-    const { currentPassword, newPassword } = req.body
-
-    if (newPassword.length < 8) {
-      throw new ValidationError("New password must be at least 8 characters")
-    }
-
-    const user = await findUserByCredentials(req.user!.username)
-    if (!user) throw new UnauthorizedError("User not found")
-
-    const isValid = await verifyPassword(currentPassword, user.password_hash!)
-    if (!isValid) throw new UnauthorizedError("Current password is incorrect")
-
-    await changePassword(req.user!.id, newPassword)
-
-    res.json({ success: true, message: "Password changed successfully" })
-  }),
+  },
 )
 
 /**
@@ -184,7 +155,7 @@ router.delete(
   "/account/data",
   authenticateToken,
   validateRequired(["confirmDelete"]),
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     if (req.body.confirmDelete !== "DELETE_ALL_DATA") {
       throw new ValidationError(
         'Must confirm deletion with confirmDelete: "DELETE_ALL_DATA"',
@@ -194,23 +165,7 @@ router.delete(
     await deleteAllUserData(req.user!.id)
 
     res.json({ success: true, message: "All data deleted successfully" })
-  }),
-)
-
-/**
- * POST /api/auth/ws-ticket
- *
- * Issues a short-lived, single-use ticket that the client presents in the
- * WebSocket handshake URL (?ticket=...) instead of the long-lived JWT.
- * This keeps the JWT out of server logs and HTTP proxy access logs.
- */
-router.post(
-  "/ws-ticket",
-  authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
-    const ticket = issueWsTicket(req.user!.id)
-    res.json({ success: true, ticket })
-  }),
+  },
 )
 
 /**
@@ -227,10 +182,10 @@ router.post(
 router.post(
   "/refresh",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const token = generateToken(req.user!.id)
     res.json({ success: true, token })
-  }),
+  },
 )
 
 export default router

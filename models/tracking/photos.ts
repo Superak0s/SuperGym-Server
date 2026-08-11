@@ -33,15 +33,6 @@ interface PhotoDataRow extends RowDataPacket {
   mime_type: string
 }
 
-
-interface CountRow extends RowDataPacket {
-  count: number
-}
-
-interface TotalRow extends RowDataPacket {
-  total: number | null
-}
-
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 export async function saveProgressPhoto(
@@ -141,22 +132,6 @@ export async function deleteProgressPhoto(
   return true
 }
 
-export async function getPhotoCount(userId: number): Promise<number> {
-  const [rows] = await dbQuery<CountRow[]>(
-    `SELECT COUNT(*) AS count FROM progress_photos WHERE user_id = ?`,
-    [userId],
-  )
-  return rows[0].count
-}
-
-export async function getTotalStorageUsed(userId: number): Promise<number> {
-  const [rows] = await dbQuery<TotalRow[]>(
-    `SELECT SUM(file_size) AS total FROM progress_photos WHERE user_id = ?`,
-    [userId],
-  )
-  return rows[0].total || 0
-}
-
 export async function getPhotosByDateRange(
   userId: number,
   startDate: string,
@@ -205,33 +180,22 @@ export async function getPhotosByMuscle(
   userId: number,
   muscleGroup: string,
   limit = 50,
-): Promise<PhotoMetadata[]> {
-  const [rows] = await dbQuery<PhotoMetaRow[]>(
-    `SELECT id, mime_type, file_size, taken_at, note, created_at FROM progress_photos
-     WHERE user_id = ? AND muscle_group = ? ORDER BY taken_at DESC LIMIT ?`,
-    [userId, muscleGroup, limit],
-  )
-  return rows.map(formatMeta)
-}
-
-export async function getPhotosByMuscleWithNotes(
-  userId: number,
-  muscleGroup: string,
-  limit = 50,
+  includeNotes = false,
 ): Promise<Array<PhotoMetadata & { muscleNotes?: string | null }>> {
   interface PhotoWithNotes extends PhotoMetaRow {
     muscle_notes: string | null
   }
 
   const [rows] = await dbQuery<PhotoWithNotes[]>(
-    `SELECT id, mime_type, file_size, taken_at, note, created_at, muscle_notes FROM progress_photos
+    `SELECT id, mime_type, file_size, taken_at, note, created_at${includeNotes ? ", muscle_notes" : ""} FROM progress_photos
      WHERE user_id = ? AND muscle_group = ? ORDER BY taken_at DESC LIMIT ?`,
     [userId, muscleGroup, limit],
   )
-  return rows.map((row) => ({
-    ...formatMeta(row),
-    muscleNotes: row.muscle_notes,
-  }))
+  return rows.map((row) =>
+    includeNotes
+      ? { ...formatMeta(row), muscleNotes: row.muscle_notes }
+      : formatMeta(row),
+  )
 }
 
 // ─── Photo comparison ───────────────────────────────────────────────────────
@@ -257,14 +221,8 @@ export async function comparePhotos(
       (1000 * 60 * 60 * 24),
   )
 
-  const before =
-    photo1.takenAt < photo2.takenAt
-      ? photo1
-      : photo2
-  const after =
-    photo1.takenAt >= photo2.takenAt
-      ? photo1
-      : photo2
+  const [before, after] =
+    photo1.takenAt < photo2.takenAt ? [photo1, photo2] : [photo2, photo1]
 
   return { before, after, daysBetween }
 }

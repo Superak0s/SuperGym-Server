@@ -2,7 +2,6 @@
 import { Router, Request, Response } from "express"
 import { authenticateToken } from "../middleware/auth.js"
 import {
-  asyncHandler,
   NotFoundError,
   ValidationError,
 } from "../middleware/errorHandler.js"
@@ -27,7 +26,7 @@ const MAX_PROGRAM_JSON_BYTES = 2 * 1024 * 1024
  */
 router.get(
   "/",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const result = await getProgramByUserId(req.user!.id)
     if (!result) throw new NotFoundError("Program")
 
@@ -40,7 +39,7 @@ router.get(
       split: programData.split,
       days: programData.days,
     })
-  }),
+  },
 )
 
 /**
@@ -52,7 +51,7 @@ router.get(
  */
 router.post(
   "/upload",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { weeklyPlan, originalFilename } = req.body
 
     if (
@@ -85,7 +84,7 @@ router.post(
       split: weeklyPlan.split,
       days: weeklyPlan.days,
     })
-  }),
+  },
 )
 
 /**
@@ -93,10 +92,10 @@ router.post(
  */
 router.delete(
   "/",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     await deleteProgramByUserId(req.user!.id)
     res.json({ success: true, message: "Program deleted" })
-  }),
+  },
 )
 
 /**
@@ -104,7 +103,7 @@ router.delete(
  */
 router.patch(
   "/exercise/rename",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { dayNumber, person, exerciseIndex, newName, newMuscleGroup } =
       req.body
 
@@ -133,7 +132,7 @@ router.patch(
       message: `Renamed "${result.oldName}" → "${result.newName}"`,
       exerciseIndex: result.exerciseIndex,
     })
-  }),
+  },
 )
 
 /**
@@ -141,7 +140,7 @@ router.patch(
  */
 router.patch(
   "/exercise/add",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { dayNumber, person, exercise } = req.body
 
     if (dayNumber == null || !person || !exercise?.name || !exercise?.sets) {
@@ -158,7 +157,7 @@ router.patch(
       exerciseIndex: result.exerciseIndex,
       exercise: result.exercise,
     })
-  }),
+  },
 )
 
 /**
@@ -166,7 +165,7 @@ router.patch(
  */
 router.patch(
   "/exercise/sets",
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const { dayNumber, person, exerciseIndex, additionalSets } = req.body
 
     if (
@@ -193,7 +192,7 @@ router.patch(
       message: `Added ${additionalSets} sets to exercise at index ${result.exerciseIndex}`,
       newSetCount: result.newSetCount,
     })
-  }),
+  },
 )
 
 export default router

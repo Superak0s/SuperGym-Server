@@ -10,26 +10,22 @@ const MAX_LENGTHS = {
   username: 20,
   email: 255,
   password: 128,
-  name: 128,
   dayTitle: 255,
   exerciseName: 255,
   muscleGroup: 128,
   note: 1000,
-  personName: 128,
   time: 8,
 } as const
 
 // ─── Primitive validators (pure functions, no side-effects) ───────────────────
 
-export const validateEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
-export const validateUsername = (v: string) => /^[a-zA-Z0-9_]{3,20}$/.test(v)
-export const validatePassword = (v: string) => !!v && v.length >= 8
-export const validatePositiveNumber = (v: unknown): v is number =>
+const validateEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+const validateUsername = (v: string) => /^[a-zA-Z0-9_]{3,20}$/.test(v)
+const validatePassword = (v: string) => !!v && v.length >= 8
+const validatePositiveNumber = (v: unknown): v is number =>
   typeof v === "number" && v > 0 && !isNaN(v)
-export const validateInteger = (v: unknown): v is number => Number.isInteger(v)
-export const validateISODate = (v: string) => !isNaN(new Date(v).getTime())
-export const validateEnum = (v: unknown, allowed: unknown[]) =>
-  allowed.includes(v)
+const validateInteger = (v: unknown): v is number => Number.isInteger(v)
+const validateISODate = (v: string) => !isNaN(new Date(v).getTime())
 
 /** Returns an error message if the string exceeds the limit, otherwise null. */
 function checkMaxLength(
@@ -61,25 +57,6 @@ export function validateRequired(requiredFields: string[]) {
       if (missing.length > 0) {
         throw new ValidationError(
           `Missing required fields: ${missing.join(", ")}`,
-        )
-      }
-      next()
-    } catch (err) {
-      next(err)
-    }
-  }
-}
-
-/** Reject query params that are not in the allow-list. */
-export function validateQueryParams(allowedParams: string[]) {
-  return (req: Request, _res: Response, next: NextFunction): void => {
-    try {
-      const invalid = Object.keys(req.query).filter(
-        (k) => !allowedParams.includes(k),
-      )
-      if (invalid.length > 0) {
-        throw new ValidationError(
-          `Invalid query parameters: ${invalid.join(", ")}`,
         )
       }
       next()
@@ -162,23 +139,6 @@ export function validateWeightEntry(
       throw new ValidationError("Weight must be a positive number")
     if (weightKg < 20 || weightKg > 500)
       throw new ValidationError("Weight must be between 20-500 kg")
-    next()
-  } catch (err) {
-    next(err)
-  }
-}
-
-export function validateHeightEntry(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-): void {
-  try {
-    const { heightCm } = req.body
-    if (!validatePositiveNumber(heightCm))
-      throw new ValidationError("Height must be a positive number")
-    if (heightCm < 50 || heightCm > 300)
-      throw new ValidationError("Height must be between 50-300 cm")
     next()
   } catch (err) {
     next(err)
@@ -325,84 +285,4 @@ export function validateSetTimingUpdate(
   }
 }
 
-export function validateProteinIntake(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-): void {
-  try {
-    const { grams, errorMargin, time, takenAt } = req.body
-    const errors: string[] = []
 
-    if (!validatePositiveNumber(grams))
-      errors.push("Grams must be a positive number")
-    if (grams > 500) errors.push("Grams must be less than 500")
-    if (
-      errorMargin !== undefined &&
-      (typeof errorMargin !== "number" || errorMargin < 0 || errorMargin > 100)
-    )
-      errors.push("Error margin must be between 0-100")
-
-    if (!time) {
-      errors.push("Time is required")
-    } else {
-      const lenErr = checkMaxLength(String(time), "time")
-      if (lenErr) errors.push(lenErr)
-    }
-
-    if (!validateISODate(takenAt)) errors.push("Invalid taken at date format")
-
-    if (errors.length > 0)
-      throw new ValidationError("Invalid protein intake data", errors)
-    next()
-  } catch (err) {
-    next(err)
-  }
-}
-
-export function validateBodyFatCalculation(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-): void {
-  try {
-    const { waist, neck, unit } = req.body
-    const errors: string[] = []
-
-    if (!validatePositiveNumber(waist))
-      errors.push("Waist measurement must be a positive number")
-    if (!validatePositiveNumber(neck))
-      errors.push("Neck measurement must be a positive number")
-    if (unit && !validateEnum(unit, ["cm", "in"]))
-      errors.push('Unit must be "cm" or "in"')
-
-    if (errors.length > 0)
-      throw new ValidationError("Invalid body fat data", errors)
-    next()
-  } catch (err) {
-    next(err)
-  }
-}
-
-export function validatePagination(
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-): void {
-  try {
-    const { page, limit } = req.query
-    if (page !== undefined) {
-      const n = parseInt(page as string)
-      if (!validateInteger(n) || n < 1)
-        throw new ValidationError("Page must be a positive integer")
-    }
-    if (limit !== undefined) {
-      const n = parseInt(limit as string)
-      if (!validateInteger(n) || n < 1 || n > 100)
-        throw new ValidationError("Limit must be between 1-100")
-    }
-    next()
-  } catch (err) {
-    next(err)
-  }
-}

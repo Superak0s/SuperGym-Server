@@ -2,7 +2,6 @@
 import { Router, Request, Response } from "express"
 import { authenticateToken } from "../middleware/auth.js"
 import {
-  asyncHandler,
   ForbiddenError,
   ValidationError,
 } from "../middleware/errorHandler.js"
@@ -10,10 +9,9 @@ import {
   validateSessionCreation,
   validateSetTiming,
   validateSetTimingUpdate,
-  validateRequired,
 } from "../middleware/validation.js"
 import { pool } from "../config/database.js"
-import { notifyWatcher, pushSessionStatus } from "../ws/wsServer.js"
+import { notifyWatcher, sendToUser } from "../ws/wsServer.js"
 import {
   createSession,
   recordSetTiming,
@@ -61,7 +59,7 @@ async function requireOwnSession(
 router.get(
   "/",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const { person, dayNumber, limit, includeTimings } = req.query
 
@@ -74,7 +72,7 @@ router.get(
     )
 
     res.json({ success: true, sessions, total: sessions.length })
-  }),
+  },
 )
 
 /**
@@ -84,7 +82,7 @@ router.post(
   "/start",
   authenticateToken,
   validateSessionCreation,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const { person, dayNumber, dayTitle, muscleGroups, isAdmin } = req.body
 
@@ -113,7 +111,7 @@ router.post(
     }
 
     res.json({ success: true, session: { ...session, id: newSessionId } })
-  }),
+  },
 )
 
 /**
@@ -125,7 +123,7 @@ router.post(
 router.post(
   "/rename-exercise",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const { person, oldName, newName, muscleGroup } = req.body
 
@@ -141,7 +139,7 @@ router.post(
       muscleGroup,
     )
     res.json({ success: true, updatedCount })
-  }),
+  },
 )
 
 /**
@@ -151,7 +149,7 @@ router.post(
   "/:sessionId/set",
   authenticateToken,
   validateSetTiming,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const sessionId = parseId(String(req.params.sessionId))
     if (sessionId === null) throw new ValidationError("Invalid session ID")
@@ -198,7 +196,7 @@ router.post(
     )
 
     res.json({ success: true, timing })
-  }),
+  },
 )
 
 /**
@@ -210,7 +208,7 @@ router.patch(
   "/:sessionId/sets/:setId",
   authenticateToken,
   validateSetTimingUpdate,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const sessionId = parseId(String(req.params.sessionId))
     const setId = parseId(String(req.params.setId))
@@ -220,7 +218,7 @@ router.patch(
 
     const timing = await updateSetTiming(sessionId, setId, userId, req.body)
     res.json({ success: true, timing })
-  }),
+  },
 )
 
 /**
@@ -229,7 +227,7 @@ router.patch(
 router.post(
   "/:sessionId/end",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const sessionId = parseId(String(req.params.sessionId))
     if (sessionId === null) throw new ValidationError("Invalid session ID")
@@ -247,7 +245,7 @@ router.post(
     }
 
     res.json({ success: true, session })
-  }),
+  },
 )
 
 /**
@@ -256,14 +254,14 @@ router.post(
 router.get(
   "/:sessionId",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const sessionId = parseId(String(req.params.sessionId))
     if (sessionId === null) throw new ValidationError("Invalid session ID")
 
     const session = await getSessionDetails(sessionId, userId)
     res.json({ success: true, session })
-  }),
+  },
 )
 
 // ─── Bulk delete routes ───────────────────────────────────────────────────────
@@ -276,7 +274,7 @@ router.get(
 router.delete(
   "/admin",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const deletedCount: number = await clearAdminSessions(userId)
 
@@ -285,7 +283,7 @@ router.delete(
       message: `Deleted ${deletedCount} admin session(s)`,
       deletedCount,
     })
-  }),
+  },
 )
 
 /**
@@ -294,46 +292,31 @@ router.delete(
 router.delete(
   "/person/:person",
   authenticateToken,
-  asyncHandler(async (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
     const userId = req.user!.id
     const person = String(req.params.person)
 
     const result = await deleteAllSessionsForPerson(userId, person)
     res.json(result)
-  }),
+  },
 )
 
-/**
- * DELETE /api/sessions  (delete all non-admin sessions)
- */
-router.delete(
-  "/",
-  authenticateToken,
-  validateRequired(["confirmDelete"]),
-  asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user!.id
-    const { confirmDelete } = req.body
-
-    if (confirmDelete !== "DELETE_ALL_SESSIONS") {
-      throw new ValidationError(
-        'Must confirm deletion with confirmDelete: "DELETE_ALL_SESSIONS"',
-      )
-    }
-
-    const [result] = await pool.execute<any>(
-      "DELETE FROM sessions WHERE user_id = ? AND is_admin = 0",
-      [userId],
-    )
-
-    res.json({
-      success: true,
-      message: `Deleted ${result.affectedRows} session(s)`,
-      deletedCount: result.affectedRows,
-    })
-  }),
-)
 
 // ─── WS push helpers ──────────────────────────────────────────────────────────
+
+async function getSessionWatchers(userId: number): Promise<{ to_user_id: number }[]> {
+  const [watchers] = await pool.execute<any[]>(
+    `SELECT sp.to_user_id
+     FROM sharing_permissions sp
+     JOIN friendships f
+       ON (  (f.user_id = sp.from_user_id AND f.friend_id = sp.to_user_id)
+          OR (f.user_id = sp.to_user_id   AND f.friend_id = sp.from_user_id) )
+     WHERE sp.from_user_id = ? AND sp.permission_type = 'watch_session'
+       AND f.status = 'accepted'`,
+    [userId],
+  )
+  return watchers
+}
 
 async function pushSessionStatusToWatchers(
   userId: number,
@@ -342,19 +325,10 @@ async function pushSessionStatusToWatchers(
   type: string,
 ): Promise<void> {
   try {
-    const [watchers] = await pool.execute<any[]>(
-      `SELECT sp.to_user_id
-       FROM sharing_permissions sp
-       JOIN friendships f
-         ON (  (f.user_id = sp.from_user_id AND f.friend_id = sp.to_user_id)
-            OR (f.user_id = sp.to_user_id   AND f.friend_id = sp.from_user_id) )
-       WHERE sp.from_user_id = ? AND sp.permission_type = 'watch_session'
-         AND f.status = 'accepted'`,
-      [userId],
-    )
+    const watchers = await getSessionWatchers(userId)
 
     watchers.forEach((w: { to_user_id: number }) => {
-      pushSessionStatus(w.to_user_id, type, {
+      sendToUser(w.to_user_id, type, {
         friendId: userId,
         friendUsername: username,
         ...(sessionId != null && { sessionId }),
@@ -372,16 +346,7 @@ async function pushLiveUpdateToWatchers(
   userId: number,
   sessionId: number,
 ): Promise<void> {
-  const [watchers] = await pool.execute<any[]>(
-    `SELECT sp.to_user_id
-     FROM sharing_permissions sp
-     JOIN friendships f
-       ON (  (f.user_id = sp.from_user_id AND f.friend_id = sp.to_user_id)
-          OR (f.user_id = sp.to_user_id   AND f.friend_id = sp.from_user_id) )
-     WHERE sp.from_user_id = ? AND sp.permission_type = 'watch_session'
-       AND f.status = 'accepted'`,
-    [userId],
-  )
+  const watchers = await getSessionWatchers(userId)
 
   if (!watchers.length) return
 

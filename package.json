@@ -7,7 +7,8 @@
     "build": "tsc && cp config/schema.sql dist/config/schema.sql",
     "dev": "tsx watch server.ts",
     "start": "node dist/server.js",
-    "admin": "tsx admin.ts"
+    "admin": "tsx admin.ts",
+    "sonar:scan": "node -e \"const{execFileSync}=require('child_process');execFileSync('npx',['@sonar/scan','-Dsonar.host.url=http://192.168.10.12:8999','-Dsonar.token='+process.env.SONAR_TOKEN,'-Dsonar.projectKey=OwnLift-Server','-Dsonar.analysisCache.enabled=false'],{stdio:'inherit'})\""
   },
   "keywords": [
     "workout",
@@ -21,26 +22,26 @@
   "license": "MIT",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.6.0",
+    "express-rate-limit": "^8.6.2",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
-    "mysql2": "^3.23.1",
-    "ws": "^8.21.1",
-    "xlsx": "^0.18.5"
+    "mysql2": "^3.23.2",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.2.0",
-    "@types/node": "^24",
+    "@types/node": "^24.13.3",
     "@types/ws": "^8.18.1",
-    "nodemon": "^3.1.14",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.11",
     "typescript": "^6.0.3"
   }
 }
