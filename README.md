@@ -10,7 +10,7 @@ A Node.js / TypeScript REST + WebSocket API, backed by MySQL, Docker-first and s
 
 ## Tech stack
 
-- **Runtime:** Node.js (Docker image `node:24-alpine`), **TypeScript 5.9**, compiled with `tsc`, run via `ts-node` in dev.
+- **Runtime:** Node.js (Docker image `node:24-alpine`), **TypeScript 6.0**, compiled with `tsc`, run via `tsx watch` in dev.
 - **Framework:** **Express 5**.
 - **Database:** **MySQL** via `mysql2` (`mysql2/promise` connection pool). No ORM — hand-written SQL with a versioned `schema.sql`.
 - **Auth:** **JWT** (`jsonwebtoken`, HS256) + **bcryptjs** (12 salt rounds) for password hashing.
@@ -47,6 +47,7 @@ All routes are under `/api` and require a JWT `Authorization: Bearer <token>` un
 | DELETE | `/account/data` | Wipe all user data (confirm `DELETE_ALL_DATA`); keeps account   |
 | POST   | `/ws-ticket`    | Issue short-lived (30 s), single-use WebSocket handshake ticket |
 | POST   | `/refresh`      | Reissue a JWT (must still be valid)                             |
+| POST   | `/logout-all`   | Invalidate every JWT issued to this account (this one included) |
 
 ### Sessions (workouts) — `/api/sessions`
 
@@ -109,7 +110,7 @@ SQL tables (`config/schema.sql`):
 - **sharing_permissions** — per-friend access grants.
 - **joint_sessions** / **joint_session_participants** / **joint_session_invites** — synchronized co-workouts.
 
-The schema is applied once on a fresh DB and tracked via a `_schema_version` table (current version `1`); further changes need real migrations.
+`schema.sql` covers the initial `CREATE TABLE IF NOT EXISTS` shape of every table. Changes to existing tables (new columns, indexes) go in `migrations/*.sql` — each file runs at most once, tracked in a `_migrations` table, applied in filename order on every boot.
 
 ---
 
@@ -125,6 +126,7 @@ Set these environment variables (a `.env` file is supported via `dotenv`):
 | `DB_USER`         | **yes**  | —           | MySQL user                                                         |
 | `DB_PASSWORD`     | **yes**  | —           | MySQL password                                                     |
 | `DB_NAME`         | **yes**  | —           | Database name (auto-created if missing)                            |
+| `DB_CONNECTION_LIMIT` | no   | `20`        | MySQL pool size — tune against your MySQL `max_connections`         |
 | `JWT_SECRET`      | **yes**  | —           | Must be ≥ 32 characters                                            |
 | `JWT_EXPIRES_IN`  | no       | `7d`        | Token lifetime                                                     |
 | `ALLOWED_ORIGINS` | **yes**  | —           | Comma-separated CORS origins                                       |
@@ -140,7 +142,7 @@ Set these environment variables (a `.env` file is supported via `dotenv`):
 
 ```bash
 pnpm install
-pnpm dev          # ts-node, hot iteration
+pnpm dev          # tsx watch, hot iteration
 ```
 
 ### Production build
@@ -170,9 +172,13 @@ The image is a two-stage build (`node:24-alpine`, pnpm), runs `node dist/server.
 - The **first registered user** automatically becomes an admin.
 - Manage admins via the CLI:
   ```bash
-  pnpm admin list
-  pnpm admin add <username>
-  pnpm admin remove <username>
+  pnpm ownlift list
+  pnpm ownlift add <username>
+  pnpm ownlift remove <username>
+  ```
+- In Docker, run it against the running container:
+  ```bash
+  docker exec <container> ownlift list
   ```
 
 ---

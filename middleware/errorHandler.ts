@@ -62,6 +62,7 @@ export function errorHandler(
     stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
     path: req.path,
     method: req.method,
+    reqId: req.reqId,
   })
 
   const statusCode = (err as AppError).statusCode ?? 500

@@ -11,7 +11,7 @@
 // of whether any client is connected, and closes anything that's gone
 // quiet for too long.
 
-import { findStaleOpenSessions, autoEndStaleSession } from "../models/workout.js"
+import { findStaleOpenSessions, autoEndStaleSession } from "../features/workouts/workouts.model.js"
 
 // Keep this in sync with INACTIVITY_THRESHOLD_MS on the client
 // (utils/session.ts) — both should represent the same 30-minute idea.
@@ -107,4 +107,11 @@ export function startStaleSessionCleanup(): void {
     `[SESSION_CLEANUP] Scheduled every ${CHECK_INTERVAL_MS / 60000}m ` +
       `(inactivity threshold: ${INACTIVITY_THRESHOLD_MINUTES}m)`,
   )
+}
+
+export function stopStaleSessionCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer)
+    cleanupTimer = null
+  }
 }

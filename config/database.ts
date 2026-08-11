@@ -3,7 +3,7 @@ import mysql, { Pool, PoolConnection } from "mysql2/promise";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
-import type { QueryResult, FieldPacket } from "mysql2/promise";
+import type { QueryResult, FieldPacket, RowDataPacket } from "mysql2/promise";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 
@@ -28,7 +28,10 @@ export const pool: Pool = mysql.createPool({
   port: Number(process.env.DB_PORT) || 3306,
   waitForConnections: true,
   connectionLimit: Number(process.env.DB_CONNECTION_LIMIT) || 20,
-  queueLimit: 0,
+  // Bounded rather than unlimited (0): under a real overload, requests should
+  // fail fast with an error the client can retry, not queue indefinitely and
+  // pile up memory/timeouts.
+  queueLimit: 200,
   dateStrings: true,
 });
 
@@ -92,6 +95,57 @@ export async function initializeTables(): Promise<void> {
     console.log("✓ All database tables initialized successfully");
   } finally {
     connection.release();
+  }
+}
+
+// ─── Migrations ───────────────────────────────────────────────────────────────
+//
+// For schema changes that CREATE TABLE IF NOT EXISTS can't express (new
+// columns, indexes on existing tables). Each file in migrations/ runs at
+// most once, tracked in _migrations, in filename order.
+
+async function runMigrations(): Promise<void> {
+  const migrationsDir = path.join(__dirname, "..", "migrations");
+  if (!fs.existsSync(migrationsDir)) return;
+
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      name       VARCHAR(255) NOT NULL,
+      applied_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `);
+
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort((a, b) => a.localeCompare(b));
+
+  for (const file of files) {
+    const [applied] = await pool.execute<RowDataPacket[]>(
+      `SELECT 1 FROM _migrations WHERE name = ?`,
+      [file],
+    );
+    if (applied.length > 0) continue;
+
+    const statements = parseSQLStatements(
+      fs.readFileSync(path.join(migrationsDir, file), "utf8"),
+    );
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      for (const stmt of statements) await connection.execute(stmt);
+      await connection.execute(`INSERT INTO _migrations (name) VALUES (?)`, [
+        file,
+      ]);
+      await connection.commit();
+      console.log(`✓ Applied migration ${file}`);
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
   }
 }
 
@@ -192,10 +246,13 @@ async function ensureAdditionalTrackingTables(): Promise<void> {
     CREATE TABLE IF NOT EXISTS progress_photos_muscle (
       id INT UNSIGNED NOT NULL AUTO_INCREMENT,
       user_id INT UNSIGNED NOT NULL,
-      uri VARCHAR(1024) NOT NULL,
+      photo_data LONGBLOB NOT NULL,
+      mime_type VARCHAR(64) NOT NULL,
+      file_size INT UNSIGNED NOT NULL,
       taken_at DATETIME NOT NULL,
       notes TEXT DEFAULT NULL,
       angle ENUM('front','back','side','custom') NOT NULL DEFAULT 'custom',
+      custom_side_name VARCHAR(255) DEFAULT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY idx_ppm_user_taken (user_id, taken_at),
@@ -242,6 +299,7 @@ export async function testDatabaseConnection(): Promise<void> {
     // Ensure any newer/additional tracking tables exist even if the DB was
     // already initialized with an older schema version.
     await ensureAdditionalTrackingTables();
+    await runMigrations();
     console.log("✓ Database is ready");
   } catch (error) {
     // Log only the message — never the error object itself as it may contain

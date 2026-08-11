@@ -13,7 +13,7 @@ pnpm install
 pnpm dev              # tsx watch server.ts — hot reload dev server
 pnpm build             # tsc + copies config/schema.sql into dist/config/
 pnpm start             # node dist/server.js (run after build)
-pnpm admin list|add|remove <username>   # tsx admin.ts — manage admin users
+pnpm ownlift list|add|remove <username>   # tsx ownlift.ts — manage admin users (docker: `docker exec <container> ownlift ...`)
 ```
 
 There is no test suite and no linter configured in this repo — don't invent `pnpm test`/`pnpm lint` commands.
@@ -22,13 +22,11 @@ Requires a `.env` (see README.md for the full variable table). At minimum `DB_US
 
 ## Architecture
 
-**Request pipeline** (`server.ts`): `helmet` → `cors` (locked to `ALLOWED_ORIGINS`) → `express.json` (50kb limit) → static `public/` → per-request UUID (`req.reqId`) + logger → rate limiters (`/api/auth`: 20/15min, `/api`: 200/60s) → routes → 404 → global `errorHandler`. The HTTP server and the WebSocket server (`ws/wsServer.ts`) share the same `http.createServer` instance.
+**Request pipeline** (`server.ts`): `helmet` (CSP locked to `default-src 'none'` — pure JSON API, no HTML views) → `cors` (locked to `ALLOWED_ORIGINS`) → `compression` → `express.json` (50kb limit; `/api/program/upload` gets its own 2mb-limit parser mounted first) → static `public/` → per-request UUID (`req.reqId`) + logger → rate limiters (`/api/auth`: 20/15min, `/api`: 200/60s) → unauthenticated `GET /healthz` liveness check (for Docker/load balancer, distinct from `/api/health`) → routes → 404 → global `errorHandler`. `app.set("trust proxy", 1)` is required behind the TLS-terminating reverse proxy or rate-limit keys collapse onto one bucket. The HTTP server and the WebSocket server (`ws/wsServer.ts`) share the same `http.createServer` instance.
 
-**Layering**: `routes/*` (Express routers, request validation, calling models/services) → `models/*` (SQL queries against `mysql2` pool) → `config/database.ts` (pool + schema bootstrap). A few cross-cutting `services/*` (analytics, workout/session logic) sit between routes and models where logic doesn't map to a single table. `routes/index.ts` is the single place every router gets mounted — add new route modules there.
+**Feature-first layout**: code lives under `features/<domain>/`, not in top-level `routes/`/`models/` directories. Each feature is a flat trio of same-named files: `<name>.routes.ts` (Express router, request validation), `<name>.model.ts` (SQL queries against the `mysql2` pool), and often `<name>.types.ts`. Bigger domains nest sub-features one level deeper — `features/tracking/<metric>/<metric>.{routes,model}.ts` (`bodyStats`, `bodyMeasurements`, `customMeasurements`, `hydration`, `soreness`, `macros`, `supplements`, `menstrual`, `doms`, `injury`, `personalNotes`, `photos`, `progressPhoto`) and `features/social/<subfeature>/` (`friends`, `sharing`). Workout sessions live in `features/workouts/` (mounted at `/api/sessions`, not `/api/workouts`). `routes.ts` at the repo root is the single place every router gets mounted via `registerRoutes(app)` — add new route modules there, following the existing `app.use("/api/...", ...)` list.
 
-Routes and models are grouped by domain into `social/` and `tracking/` subdirectories (e.g. `routes/tracking/macros.ts` + `models/tracking/macros.ts`). When adding a new tracking metric or social feature, follow this same route+model pairing and subdirectory placement.
-
-**Auth**: JWT (HS256, `jsonwebtoken`) verified in `middleware/auth.ts`. `authenticateToken` requires a valid token and attaches `req.user`. Passwords hashed with bcryptjs (12 rounds). The first-ever registered user auto-becomes admin (`routes/admin.ts` / `admin.ts` CLI manage further admins).
+**Auth**: JWT (HS256, `jsonwebtoken`) verified in `middleware/auth.ts`. `authenticateToken` requires a valid token and attaches `req.user`. Passwords hashed with bcryptjs (12 rounds). The first-ever registered user auto-becomes admin (`features/auth/`; `ownlift.ts` CLI manages further admins).
 
 **Errors**: `middleware/errorHandler.ts` defines typed error classes (e.g. `UnauthorizedError`) and the global handler; routes/middleware should throw/`next()` these rather than crafting raw error responses. `NODE_ENV=production` masks internal error details.
 
@@ -36,11 +34,11 @@ Routes and models are grouped by domain into `social/` and `tracking/` subdirect
 
 **Background jobs**: `jobs/sessionCleanup.ts` auto-ends workout sessions idle >30min; runs on boot then every 5min, reentrancy-guarded.
 
-**Database**: schema lives in `config/schema.sql`, entirely `CREATE TABLE IF NOT EXISTS` statements, re-run idempotently on every boot. New tables for tracking features go in `ensureAdditionalTrackingTables()` (`config/database.ts`) using the same idempotent pattern — don't hand-edit `schema.sql` for changes to an existing deployment.
+**Database**: schema lives in `config/schema.sql`, entirely `CREATE TABLE IF NOT EXISTS` statements, re-run idempotently on every boot. New tables for tracking features go in `ensureAdditionalTrackingTables()` (`config/database.ts`) using the same idempotent pattern — don't hand-edit `schema.sql` for changes to an existing deployment. Changes to *existing* tables (new columns, indexes) go in a new `migrations/NNN_description.sql` file instead — `runMigrations()` (`config/database.ts`) applies each one at most once, tracked in a `_migrations` table, in filename order on every boot. `pnpm build` copies `migrations/` into `dist/` alongside `schema.sql`.
 
 **Uploads**: `multer` — memory storage for photos (stored as `LONGBLOB` in MySQL, 10MB cap, image-only), disk storage for legacy spreadsheet uploads. Workout program spreadsheets are parsed client-side in the app; the server only validates and stores the resulting JSON (2MB cap).
 
-**Module system**: ESM (`"type": "module"` in package.json). Local imports must use explicit `.js` extensions even though source is `.ts` (NodeNext resolution) — e.g. `import { foo } from "../models/auth.js"`.
+**Module system**: ESM (`"type": "module"` in package.json). Local imports must use explicit `.js` extensions even though source is `.ts` (NodeNext resolution) — e.g. `import { findUserByEmail } from "../auth/user.model.js"`.
 
 ## Releasing
 

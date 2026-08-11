@@ -8,7 +8,7 @@ import rateLimit from "express-rate-limit"
 import dotenv from "dotenv"
 import { randomUUID } from "crypto"
 import packageJson from "./package.json" with { type: "json" }
-import { startStaleSessionCleanup } from "./jobs/sessionCleanup.js"
+import { startStaleSessionCleanup, stopStaleSessionCleanup } from "./jobs/sessionCleanup.js"
 
 dotenv.config()
 
@@ -24,8 +24,8 @@ if (!process.env.ALLOWED_ORIGINS)
   )
 
 import { testDatabaseConnection, pool } from "./config/database.js"
-import { createWsServer } from "./ws/wsServer.js"
-import { registerRoutes } from "./routes/index.js"
+import { createWsServer, closeWsServer } from "./ws/wsServer.js"
+import { registerRoutes } from "./routes.js"
 import { errorHandler } from "./middleware/errorHandler.js"
 
 // ─── Extend Express Request with reqId ───────────────────────────────────────
@@ -43,8 +43,22 @@ declare global {
 const app = express()
 const PORT = process.env.PORT || 5000
 
+// ─── Trust the reverse proxy (TLS-terminating, per README/Dockerfile) ─────────
+// Without this, req.ip resolves to the proxy's socket address for every
+// request, so express-rate-limit keys all clients into one shared bucket.
+app.set("trust proxy", 1)
+
 // ─── Security headers ─────────────────────────────────────────────────────────
-app.use(helmet())
+// This is a JSON API with no HTML views (public/ has no static assets today),
+// so lock CSP down to "load nothing" rather than the browser-page-oriented
+// defaults helmet ships with.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: { defaultSrc: ["'none'"] },
+    },
+  }),
+)
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 const allowedOrigins = process.env.ALLOWED_ORIGINS.split(",").map((o) =>
@@ -61,6 +75,10 @@ app.use(
 app.use(compression())
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
+// Program uploads need a bigger cap (matches MAX_PROGRAM_JSON_BYTES in
+// programs.routes.ts) — mounted ahead of the global 50kb parser, which skips
+// bodies express.json has already parsed.
+app.use("/api/program/upload", express.json({ limit: "2mb" }))
 app.use(express.json({ limit: "50kb" }))
 app.use(express.static("public"))
 
@@ -150,6 +168,8 @@ start().catch((err) => {
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 function shutdown(exitCode: number) {
+  closeWsServer()
+  stopStaleSessionCleanup()
   server.close(async () => {
     try {
       await pool.end()

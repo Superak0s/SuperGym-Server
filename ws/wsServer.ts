@@ -4,10 +4,11 @@ import http from "http"
 import jwt from "jsonwebtoken"
 import { randomUUID } from "crypto"
 import { pool } from "../config/database.js"
+import { getTokenVersion } from "../features/auth/auth.model.js"
 import {
   getJointSession,
   updateParticipantProgress,
-} from "../models/social/sharing.js"
+} from "../features/social/sharing/sharing.model.js"
 import type { JointSession, ParticipantProgress, JwtPayload } from "../types/index.js"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -222,6 +223,14 @@ function setupAuthenticatedConnection(
 
 // ─── Server setup ─────────────────────────────────────────────────────────────
 
+// Set by createWsServer; called from server.ts's shutdown() so SIGINT (not
+// just SIGTERM) also closes WS connections gracefully.
+let wsCleanup: (() => void) | null = null
+
+export function closeWsServer(): void {
+  wsCleanup?.()
+}
+
 export function createWsServer(httpServer: http.Server): WebSocketServer {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" })
 
@@ -336,6 +345,12 @@ export function createWsServer(httpServer: http.Server): WebSocketServer {
             return
           }
 
+          if ((await getTokenVersion(payload.userId)) !== payload.tokenVersion) {
+            console.warn("[WS] revoked token for userId:", payload.userId)
+            ws.close(4001, "Unauthorized: Token has been revoked")
+            return
+          }
+
           user = authedUser
           extWs._authenticated = true
           extWs._userId = user.id
@@ -369,7 +384,10 @@ export function createWsServer(httpServer: http.Server): WebSocketServer {
       // TypeScript narrowing: user is guaranteed non-null here
       const authenticatedUser = user as WsUser
 
-      // Guard: rate limit per user
+      // Guard: rate limit per user. Not a fixed window — each message adds 1
+      // to the count and schedules its own -1 after 1s, so this is a decaying
+      // counter (effectively "no more than MAX_MSG_PER_SEC in-flight per
+      // rolling second"), not a hard per-clock-second bucket.
       const count = (msgCount.get(authenticatedUser.id) ?? 0) + 1
       msgCount.set(authenticatedUser.id, count)
       setTimeout(() => {
@@ -416,13 +434,12 @@ export function createWsServer(httpServer: http.Server): WebSocketServer {
     )
   })
 
-  // Clean up all connections on server shutdown
-  process.on("SIGTERM", () => {
+  wsCleanup = () => {
     clearInterval(heartbeat)
     clients.forEach((ws) => ws.close(1001, "Server shutting down"))
     clients.clear()
     msgCount.clear()
-  })
+  }
 
   return wss
 }

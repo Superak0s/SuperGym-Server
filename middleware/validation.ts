@@ -10,6 +10,7 @@ const MAX_LENGTHS = {
   username: 20,
   email: 255,
   password: 128,
+  name: 128,
   dayTitle: 255,
   exerciseName: 255,
   muscleGroup: 128,
@@ -21,7 +22,11 @@ const MAX_LENGTHS = {
 
 const validateEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 const validateUsername = (v: string) => /^[a-zA-Z0-9_]{3,20}$/.test(v)
-const validatePassword = (v: string) => !!v && v.length >= 8
+// Require at least one letter and one digit alongside the length floor —
+// blocks purely-numeric or purely-alphabetic weak passwords without forcing
+// symbol/case gymnastics on users.
+const validatePassword = (v: string) =>
+  !!v && v.length >= 8 && /[A-Za-z]/.test(v) && /\d/.test(v)
 const validatePositiveNumber = (v: unknown): v is number =>
   typeof v === "number" && v > 0 && !isNaN(v)
 const validateInteger = (v: unknown): v is number => Number.isInteger(v)
@@ -103,6 +108,41 @@ export function validateRegistration(
         errors.push("Password must be at least 8 characters")
       const lenErr = checkMaxLength(password, "password")
       if (lenErr) errors.push(lenErr)
+    }
+
+    if (errors.length > 0)
+      throw new ValidationError("Validation failed", errors)
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
+export function validateProfileUpdate(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): void {
+  try {
+    const { name, email } = req.body
+    const errors: string[] = []
+
+    if (name !== undefined) {
+      if (typeof name !== "string" || !name.trim()) {
+        errors.push("Name must be a non-empty string")
+      } else {
+        const lenErr = checkMaxLength(name, "name")
+        if (lenErr) errors.push(lenErr)
+      }
+    }
+
+    if (email !== undefined) {
+      if (typeof email !== "string" || !validateEmail(email)) {
+        errors.push("Invalid email format")
+      } else {
+        const lenErr = checkMaxLength(email, "email")
+        if (lenErr) errors.push(lenErr)
+      }
     }
 
     if (errors.length > 0)

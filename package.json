@@ -4,11 +4,11 @@
   "description": "Node.js server for processing workout files and splitting exercises by day",
   "main": "server.js",
   "scripts": {
-    "build": "tsc && cp config/schema.sql dist/config/schema.sql",
+    "build": "tsc && cp config/schema.sql dist/config/schema.sql && cp -r migrations dist/migrations",
     "dev": "tsx watch server.ts",
     "start": "node dist/server.js",
-    "admin": "tsx admin.ts",
-    "sonar:scan": "node -e \"const{execFileSync}=require('child_process');execFileSync('npx',['@sonar/scan','-Dsonar.host.url=http://192.168.10.12:8999','-Dsonar.token='+process.env.SONAR_TOKEN,'-Dsonar.projectKey=OwnLift-Server','-Dsonar.analysisCache.enabled=false'],{stdio:'inherit'})\""
+    "ownlift": "tsx ownlift.ts",
+    "sonar:scan": "node -e \"const{execFileSync}=require('child_process');execFileSync('npx',['@sonar/scan','-Dsonar.host.url='+(process.env.SONAR_HOST_URL||'http://localhost:9000'),'-Dsonar.token='+process.env.SONAR_TOKEN,'-Dsonar.projectKey=OwnLift-Server','-Dsonar.analysisCache.enabled=false'],{stdio:'inherit'})\""
   },
   "keywords": [
     "workout",
